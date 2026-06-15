@@ -1,0 +1,93 @@
+/* ===========================================================================
+   auth UI tokens — Tailwind v4.  Paste this block into your globals.css
+   AFTER `@import "tailwindcss";` (or @import this file there). The login screen,
+   account menu, and passkey prompt consume these semantic tokens, so they adapt
+   to light/dark automatically. Recolor the brand by editing --brass / --ink.
+   If your project already defines an equivalent palette, map these names to it
+   instead of pasting, or restyle the three auth components to your tokens.
+   =========================================================================== */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --paper: #f5f2ea;
+  --surface: #fffdf8;
+  --surface-2: #efeadd;
+  --surface-3: #e6dfce;
+  --ink: #17212c;
+  --ink-soft: #46525f;
+  --ink-faint: #7c8794;
+  --line: #e3dccd;
+  --line-strong: #d2c8b4;
+  --brass: #8a6d31; /* ← brand accent (light) */
+  --brass-bright: #b08d44;
+  --pos: #2c7a57;
+  --pos-soft: #e4f0e9;
+  --neg: #ad3a2f;
+  --neg-soft: #f6e4e1;
+  --warn: #9c6f24;
+  --warn-soft: #f4ead2;
+}
+
+.dark {
+  --paper: #0d131a;
+  --surface: #141d27;
+  --surface-2: #1b2530;
+  --surface-3: #24303c;
+  --ink: #ece5d6;
+  --ink-soft: #a7b1bd;
+  --ink-faint: #69737f;
+  --line: #25313d;
+  --line-strong: #324050;
+  --brass: #cba463; /* ← brand accent (dark) */
+  --brass-bright: #ddba7d;
+  --pos: #5cbd92;
+  --pos-soft: #15251e;
+  --neg: #e07c70;
+  --neg-soft: #2a1916;
+  --warn: #d8ac51;
+  --warn-soft: #271f10;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface-2);
+  --color-surface3: var(--surface-3);
+  --color-ink: var(--ink);
+  --color-inksoft: var(--ink-soft);
+  --color-inkfaint: var(--ink-faint);
+  --color-line: var(--line);
+  --color-linestrong: var(--line-strong);
+  --color-brass: var(--brass);
+  --color-brassbright: var(--brass-bright);
+  --color-pos: var(--pos);
+  --color-possoft: var(--pos-soft);
+  --color-neg: var(--neg);
+  --color-negsoft: var(--neg-soft);
+  --color-warn: var(--warn);
+  --color-warnsoft: var(--warn-soft);
+}
+
+.rule-brass {
+  background: linear-gradient(
+    90deg,
+    var(--brass) 0%,
+    var(--brass-bright) 45%,
+    transparent 100%
+  );
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-rise {
+  animation: fade-rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}

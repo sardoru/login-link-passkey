@@ -1,0 +1,13 @@
+# dependencies
+node_modules/
+
+# secrets — never commit real env files (only the .example is tracked)
+.env
+.env.local
+.env*.local
+
+# os / editor
+.DS_Store
+*.log
+.idea/
+.vscode/
