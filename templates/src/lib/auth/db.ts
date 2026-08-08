@@ -1,10 +1,12 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { supabaseConfig, MAGIC_TTL_MIN } from "./config";
 import { normalizeEmail } from "./allowlist";
+import type { UserOverrides } from "./permissions";
 
 let client: SupabaseClient | null = null;
 
-function db(): SupabaseClient {
+/** Service-role client. Server-only — never import this into a client bundle. */
+export function db(): SupabaseClient {
   if (!client) {
     const { url, serviceKey } = supabaseConfig();
     client = createClient(url, serviceKey, {
@@ -14,9 +16,19 @@ function db(): SupabaseClient {
   return client;
 }
 
+export const USER_COLUMNS =
+  "id,email,name,role,status,permissions,created_at,last_login_at,invited_at";
+
 export interface AuthUser {
   id: string;
   email: string;
+  name?: string | null;
+  role?: string;
+  status?: "active" | "invited" | "suspended";
+  permissions?: UserOverrides | null;
+  created_at?: string;
+  last_login_at?: string | null;
+  invited_at?: string | null;
 }
 
 export interface PasskeyRow {
@@ -31,7 +43,7 @@ export interface PasskeyRow {
 export async function getUserById(id: string): Promise<AuthUser | null> {
   const { data } = await db()
     .from("auth_users")
-    .select("id,email")
+    .select(USER_COLUMNS)
     .eq("id", id)
     .maybeSingle();
   return (data as AuthUser) ?? null;
@@ -40,18 +52,39 @@ export async function getUserById(id: string): Promise<AuthUser | null> {
 export async function getUserByEmail(email: string): Promise<AuthUser | null> {
   const { data } = await db()
     .from("auth_users")
-    .select("id,email")
+    .select(USER_COLUMNS)
     .eq("email", normalizeEmail(email))
     .maybeSingle();
   return (data as AuthUser) ?? null;
 }
 
-export async function upsertUser(email: string): Promise<AuthUser> {
+/**
+ * Create-or-fetch a user. Only the fields you pass are written, so signing in
+ * never clobbers a name or demotes a role set in the admin dashboard.
+ */
+export async function upsertUser(
+  email: string,
+  fields: {
+    name?: string | null;
+    role?: string;
+    status?: "active" | "invited" | "suspended";
+    invitedBy?: string | null;
+  } = {}
+): Promise<AuthUser> {
   const e = normalizeEmail(email);
+  const payload: Record<string, unknown> = { email: e };
+  if (fields.name !== undefined) payload.name = fields.name;
+  if (fields.role !== undefined) payload.role = fields.role;
+  if (fields.status !== undefined) payload.status = fields.status;
+  if (fields.invitedBy !== undefined) {
+    payload.invited_by = fields.invitedBy;
+    payload.invited_at = new Date().toISOString();
+  }
+
   const { data, error } = await db()
     .from("auth_users")
-    .upsert({ email: e }, { onConflict: "email" })
-    .select("id,email")
+    .upsert(payload, { onConflict: "email" })
+    .select(USER_COLUMNS)
     .single();
   if (error) throw error;
   return data as AuthUser;
@@ -62,6 +95,15 @@ export async function touchLogin(userId: string): Promise<void> {
     .from("auth_users")
     .update({ last_login_at: new Date().toISOString() })
     .eq("id", userId);
+}
+
+/** Flip an `invited` user to `active` once they actually complete a sign-in. */
+export async function activateUser(userId: string): Promise<void> {
+  await db()
+    .from("auth_users")
+    .update({ status: "active" })
+    .eq("id", userId)
+    .eq("status", "invited");
 }
 
 export async function createMagicLink(

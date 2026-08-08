@@ -17,7 +17,10 @@ ORG_ID="${3:-}"
 TOKEN="${SUPABASE_ACCESS_TOKEN:?set SUPABASE_ACCESS_TOKEN (sbp_...)}"
 API="https://api.supabase.com/v1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SQL_FILE="$SCRIPT_DIR/../templates/supabase/0001_auth.sql"
+SQL_FILES=(
+  "$SCRIPT_DIR/../templates/supabase/0001_auth.sql"
+  "$SCRIPT_DIR/../templates/supabase/0002_admin.sql"
+)
 auth=(-H "Authorization: Bearer $TOKEN")
 
 jqpy() { python3 -c "import sys,json;$1" ; }
@@ -49,11 +52,14 @@ for _ in $(seq 1 60); do
 done
 echo " $STATUS" >&2
 
-# Apply migration.
-echo ">> applying auth migration" >&2
-PAYLOAD=$(python3 -c "import json;print(json.dumps({'query':open('$SQL_FILE').read()}))")
-RESP=$(curl -s -X POST "${auth[@]}" -H "Content-Type: application/json" "$API/projects/$REF/database/query" -d "$PAYLOAD")
-echo "$RESP" | grep -qi 'error' && { echo "!! migration error: $RESP" >&2; exit 1; }
+# Apply migrations in order (0001 auth, 0002 admin/RBAC/invites/codes/waitlist).
+for SQL_FILE in "${SQL_FILES[@]}"; do
+  [ -f "$SQL_FILE" ] || { echo "!! missing $SQL_FILE" >&2; exit 1; }
+  echo ">> applying $(basename "$SQL_FILE")" >&2
+  PAYLOAD=$(python3 -c "import json;print(json.dumps({'query':open('$SQL_FILE').read()}))")
+  RESP=$(curl -s -X POST "${auth[@]}" -H "Content-Type: application/json" "$API/projects/$REF/database/query" -d "$PAYLOAD")
+  echo "$RESP" | grep -qi 'error' && { echo "!! migration error in $(basename "$SQL_FILE"): $RESP" >&2; exit 1; }
+done
 
 # Fetch the service-role key.
 SERVICE_KEY=$(curl -s "${auth[@]}" "$API/projects/$REF/api-keys?reveal=true" \
