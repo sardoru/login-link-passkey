@@ -9,8 +9,10 @@ import {
   touchLogin,
   updatePasskeyCounter,
 } from "@/lib/auth/db";
+import { activateUser } from "@/lib/auth/db";
 import { getRP, fromB64url } from "@/lib/auth/webauthn";
 import { signSession, verifyChallenge } from "@/lib/auth/session";
+import { sessionPayloadFor, maybeBootstrapOwner } from "@/lib/auth/rbac";
 import { sessionCookieOptions, challengeCookieOptions } from "@/lib/auth/server";
 import { SESSION_COOKIE, CHALLENGE_COOKIE_AUTH } from "@/lib/auth/config";
 
@@ -62,12 +64,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not verify passkey." }, { status: 400 });
   }
 
-  const user = await getUserById(passkey.user_id);
+  let user = await getUserById(passkey.user_id);
   if (!user)
     return NextResponse.json({ error: "Account not found." }, { status: 400 });
+  if (user.status === "suspended")
+    return NextResponse.json(
+      { error: "This account has been suspended." },
+      { status: 403 }
+    );
+  user = await maybeBootstrapOwner(user);
   await touchLogin(user.id);
+  await activateUser(user.id);
 
-  const jwt = await signSession({ sub: user.id, email: user.email });
+  const jwt = await signSession(await sessionPayloadFor(user));
   const res = NextResponse.json({ ok: true });
   res.cookies.set(SESSION_COOKIE, jwt, sessionCookieOptions());
   res.cookies.set(CHALLENGE_COOKIE_AUTH, "", {

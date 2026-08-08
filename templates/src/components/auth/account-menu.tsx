@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Fingerprint, LogOut, Check, ChevronDown, Loader2 } from "lucide-react";
+import Link from "next/link";
+import {
+  Fingerprint,
+  LogOut,
+  Check,
+  ChevronDown,
+  Loader2,
+  Shield,
+} from "lucide-react";
 import { useAuth } from "./auth-context";
 import { addPasskey } from "./passkey-client";
 import { cx } from "./cx";
@@ -56,10 +64,30 @@ export function AccountMenu() {
             <p className="text-[11px] uppercase tracking-wide text-inkfaint">
               Signed in as
             </p>
-            <p className="truncate text-sm font-medium text-ink">{me.email}</p>
+            <p className="truncate text-sm font-medium text-ink">
+              {me.name ?? me.email}
+            </p>
+            {me.name && (
+              <p className="truncate text-xs text-inksoft">{me.email}</p>
+            )}
+            {me.role && (
+              <p className="mt-1 text-[11px] font-semibold capitalize text-brass">
+                {me.role}
+              </p>
+            )}
           </div>
 
           <div className="p-1.5">
+            {me.isAdmin && (
+              <Link
+                href="/admin"
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink transition-colors hover:bg-surface2"
+              >
+                <Shield className="h-4 w-4 text-brass" />
+                Admin dashboard
+              </Link>
+            )}
             {me.hasPasskey ? (
               <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-pos">
                 <Check className="h-4 w-4" />

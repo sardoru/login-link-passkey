@@ -18,6 +18,7 @@ const ERRORS: Record<string, string> = {
   invalid: "That sign-in link was invalid. Request a new one below.",
   expired: "That link has expired or was already used. Request a new one.",
   server: "Something went wrong signing you in. Please try again.",
+  suspended: "This account has been suspended. Contact an administrator.",
 };
 
 export function LoginView({
@@ -34,21 +35,24 @@ export function LoginView({
     initialError ? (ERRORS[initialError] ?? null) : null
   );
   const [pkBusy, setPkBusy] = useState(false);
+  const [offerWaitlist, setOfferWaitlist] = useState(false);
 
   async function sendLink(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim()) return;
     setStatus("sending");
     setError(null);
+    setOfferWaitlist(false);
     try {
       const res = await fetch("/api/auth/magic/start", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, next: target }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(j.error ?? "Could not send the link.");
+        setOfferWaitlist(Boolean(j.waitlist));
         setStatus("idle");
         return;
       }
@@ -134,6 +138,18 @@ export function LoginView({
                 {error && (
                   <div className="animate-rise mt-4 rounded-lg border border-neg/30 bg-negsoft px-3 py-2 text-sm text-neg">
                     {error}
+                    {offerWaitlist && (
+                      <>
+                        {" "}
+                        <a
+                          href="/waitlist"
+                          className="font-semibold underline underline-offset-2"
+                        >
+                          Request access
+                        </a>
+                        .
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -191,6 +207,19 @@ export function LoginView({
                   )}
                   Sign in with a passkey
                 </button>
+
+                {/* Invite-only side doors. Drop either line if the app doesn't
+                    use access codes or a waitlist. */}
+                <p className="mt-6 text-center text-xs text-inkfaint">
+                  Have an access code?{" "}
+                  <a href="/join" className="font-semibold text-brass hover:underline">
+                    Redeem it
+                  </a>
+                  {" · "}
+                  <a href="/waitlist" className="font-semibold text-brass hover:underline">
+                    Request access
+                  </a>
+                </p>
               </>
             )}
           </div>
