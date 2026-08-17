@@ -20,6 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQL_FILES=(
   "$SCRIPT_DIR/../templates/supabase/0001_auth.sql"
   "$SCRIPT_DIR/../templates/supabase/0002_admin.sql"
+  "$SCRIPT_DIR/../templates/supabase/0003_passkeys.sql"
 )
 auth=(-H "Authorization: Bearer $TOKEN")
 
@@ -52,7 +53,7 @@ for _ in $(seq 1 60); do
 done
 echo " $STATUS" >&2
 
-# Apply migrations in order (0001 auth, 0002 admin/RBAC/invites/codes/waitlist).
+# Apply migrations in order (0001 auth, 0002 admin/RBAC/invites/codes/waitlist, 0003 passkey management).
 for SQL_FILE in "${SQL_FILES[@]}"; do
   [ -f "$SQL_FILE" ] || { echo "!! missing $SQL_FILE" >&2; exit 1; }
   echo ">> applying $(basename "$SQL_FILE")" >&2

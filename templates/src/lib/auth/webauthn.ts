@@ -25,3 +25,44 @@ export function fromB64url(s: string): Uint8Array<ArrayBuffer> {
   out.set(buf);
   return out;
 }
+
+/**
+ * A human label for a freshly registered passkey — derived, never asked for.
+ * "iPhone · Safari", "Mac · Chrome", "Windows Hello", "Security key", …
+ * Good enough to tell two passkeys apart in a list; not an identity claim.
+ */
+export function deviceLabelFromRequest(
+  request: Request,
+  attachment?: "platform" | "cross-platform" | null
+): string {
+  const ua = request.headers.get("user-agent") ?? "";
+  const os = /iPhone/.test(ua)
+    ? "iPhone"
+    : /iPad/.test(ua)
+      ? "iPad"
+      : /Android/.test(ua)
+        ? "Android"
+        : /Macintosh|Mac OS X/.test(ua)
+          ? "Mac"
+          : /Windows/.test(ua)
+            ? "Windows"
+            : /CrOS/.test(ua)
+              ? "Chromebook"
+              : /Linux/.test(ua)
+                ? "Linux"
+                : "Device";
+  const browser = /Edg\//.test(ua)
+    ? "Edge"
+    : /OPR\//.test(ua)
+      ? "Opera"
+      : /Chrome\//.test(ua) && !/Chromium/.test(ua)
+        ? "Chrome"
+        : /Firefox\//.test(ua)
+          ? "Firefox"
+          : /Safari\//.test(ua)
+            ? "Safari"
+            : null;
+  if (attachment === "cross-platform") return `Security key · ${os}`;
+  if (os === "Windows" && attachment === "platform") return "Windows Hello";
+  return browser ? `${os} · ${browser}` : os;
+}

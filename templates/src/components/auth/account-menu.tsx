@@ -5,13 +5,14 @@ import Link from "next/link";
 import {
   Fingerprint,
   LogOut,
-  Check,
   ChevronDown,
+  ChevronRight,
   Loader2,
   Shield,
 } from "lucide-react";
 import { useAuth } from "./auth-context";
 import { addPasskey } from "./passkey-client";
+import { PasskeyManager } from "./passkey-manager";
 import { cx } from "./cx";
 
 export function AccountMenu() {
@@ -19,6 +20,7 @@ export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [managing, setManaging] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,10 +91,23 @@ export function AccountMenu() {
               </Link>
             )}
             {me.hasPasskey ? (
-              <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-pos">
-                <Check className="h-4 w-4" />
-                Passkey enabled
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  setManaging(true);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink transition-colors hover:bg-surface2"
+              >
+                <Fingerprint className="h-4 w-4 text-pos" />
+                <span className="flex-1 text-left">
+                  Passkeys
+                  <span className="ml-1.5 rounded-full border border-line bg-surface2 px-1.5 py-px text-[11px] font-semibold text-inksoft">
+                    {me.passkeyCount ?? 1}
+                  </span>
+                </span>
+                <ChevronRight className="h-3.5 w-3.5 text-inkfaint" />
+              </button>
             ) : (
               <button
                 type="button"
@@ -119,6 +134,19 @@ export function AccountMenu() {
               </p>
             )}
 
+            {!me.hasPasskey && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  setManaging(true);
+                }}
+                className="w-full px-3 pb-1.5 text-left text-[11px] text-inkfaint hover:text-ink"
+              >
+                Manage passkeys…
+              </button>
+            )}
+
             <form action="/api/auth/logout" method="post">
               <button
                 type="submit"
@@ -131,6 +159,8 @@ export function AccountMenu() {
           </div>
         </div>
       )}
+
+      <PasskeyManager open={managing} onClose={() => setManaging(false)} />
     </div>
   );
 }

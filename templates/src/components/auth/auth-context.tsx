@@ -18,6 +18,7 @@ export interface Me {
   permissions?: string[];
   isAdmin?: boolean;
   hasPasskey?: boolean;
+  passkeyCount?: number;
 }
 
 interface AuthCtx {

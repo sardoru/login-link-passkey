@@ -28,6 +28,14 @@ export const INVITE_TTL_DAYS = Number(process.env.AUTH_INVITE_TTL_DAYS ?? 3);
 export const ACCESS_CODE_DEFAULT_USES = Number(
   process.env.AUTH_CODE_DEFAULT_USES ?? 10
 );
+/**
+ * Where an admin-sent "set up your passkey" link lands after the magic link
+ * signs the person in. `<PasskeyPrompt/>` sees `?passkey=setup` and opens the
+ * one-tap enrolment even if the user dismissed it before or already has one.
+ * Point this at any authed page that renders <PasskeyPrompt/>.
+ */
+export const PASSKEY_SETUP_PATH =
+  process.env.AUTH_PASSKEY_SETUP_PATH ?? "/?passkey=setup";
 /** Public waitlist page + API. Off ⇒ /waitlist 404s and the API refuses. */
 export const WAITLIST_ENABLED =
   (process.env.AUTH_WAITLIST_ENABLED ?? "true") !== "false";

@@ -4,22 +4,27 @@ import { useEffect, useState } from "react";
 import { Fingerprint, X, Loader2, Check } from "lucide-react";
 import { useAuth } from "./auth-context";
 import { addPasskey } from "./passkey-client";
-import { cx } from "./cx";
 
 const DISMISS_KEY = "auth_pk_dismiss";
+/** `?passkey=setup` (from an admin's setup-link email) forces the prompt open. */
+const SETUP_PARAM = "passkey";
 
 export function PasskeyPrompt() {
   const { me, refresh } = useAuth();
   const [dismissed, setDismissed] = useState(true);
+  const [forced, setForced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setDismissed(localStorage.getItem(DISMISS_KEY) === "1");
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get(SETUP_PARAM) === "setup") setForced(true);
   }, []);
 
-  if (!me?.authenticated || me.hasPasskey || dismissed || done) return null;
+  if (!me?.authenticated || done) return null;
+  if (!forced && (me.hasPasskey || dismissed)) return null;
 
   async function onAdd() {
     setBusy(true);
@@ -28,6 +33,7 @@ export function PasskeyPrompt() {
     setBusy(false);
     if (r.ok) {
       setDone(true);
+      clearSetupParam();
       await refresh();
     } else {
       setError(r.error ?? "Passkey setup failed.");
@@ -35,8 +41,27 @@ export function PasskeyPrompt() {
   }
 
   function dismiss() {
+    if (forced) {
+      // Don't remember a dismissal that came from an admin nudge — just close.
+      setForced(false);
+      setDismissed(true);
+      clearSetupParam();
+      return;
+    }
     localStorage.setItem(DISMISS_KEY, "1");
     setDismissed(true);
+  }
+
+  function clearSetupParam() {
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has(SETUP_PARAM)) {
+        url.searchParams.delete(SETUP_PARAM);
+        window.history.replaceState({}, "", url.toString());
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   return (
@@ -48,10 +73,16 @@ export function PasskeyPrompt() {
           </span>
           <div>
             <p className="text-sm font-semibold text-ink">
-              Sign in faster next time with a passkey
+              {forced
+                ? me.hasPasskey
+                  ? "Add a passkey on this device"
+                  : "Finish setting up your passkey"
+                : "Sign in faster next time with a passkey"}
             </p>
             <p className="text-xs text-inksoft">
-              Use Face ID or Touch ID instead of waiting for an email link.
+              {forced
+                ? "Your admin sent you here — one tap saves a passkey for this device."
+                : "Use Face ID or Touch ID instead of waiting for an email link."}
               {error && <span className="ml-1 text-neg">{error}</span>}
             </p>
           </div>

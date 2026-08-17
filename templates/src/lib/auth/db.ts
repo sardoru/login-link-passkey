@@ -40,6 +40,23 @@ export interface PasskeyRow {
   transports: string | null;
 }
 
+/** Non-secret passkey metadata — what the UI shows so people can tell them apart. */
+export interface PasskeyInfo {
+  id: string;
+  user_id: string;
+  label: string | null;
+  device_type: "singleDevice" | "multiDevice" | null;
+  backed_up: boolean;
+  transports: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  /** null ⇒ self-enrolled; otherwise the admin who registered it. */
+  created_by: string | null;
+}
+
+export const PASSKEY_INFO_COLUMNS =
+  "id,user_id,label,device_type,backed_up,transports,created_at,last_used_at,created_by";
+
 export async function getUserById(id: string): Promise<AuthUser | null> {
   const { data } = await db()
     .from("auth_users")
@@ -180,6 +197,12 @@ export async function createPasskey(p: {
   publicKey: string;
   counter: number;
   transports: string | null;
+  label?: string | null;
+  deviceType?: "singleDevice" | "multiDevice" | null;
+  backedUp?: boolean;
+  aaguid?: string | null;
+  /** Admin who enrolled it on the user's behalf; omit for self-enrolment. */
+  createdBy?: string | null;
 }): Promise<void> {
   const { error } = await db().from("auth_passkeys").insert({
     user_id: p.userId,
@@ -187,8 +210,45 @@ export async function createPasskey(p: {
     public_key: p.publicKey,
     counter: p.counter,
     transports: p.transports,
+    label: p.label ?? null,
+    device_type: p.deviceType ?? null,
+    backed_up: p.backedUp ?? false,
+    aaguid: p.aaguid ?? null,
+    created_by: p.createdBy ?? null,
   });
   if (error) throw error;
+}
+
+/** Passkeys as shown in the account menu / admin modal — no key material. */
+export async function listPasskeyInfo(userId: string): Promise<PasskeyInfo[]> {
+  const { data } = await db()
+    .from("auth_passkeys")
+    .select(PASSKEY_INFO_COLUMNS)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+  return (data as PasskeyInfo[]) ?? [];
+}
+
+export async function getPasskeyInfo(id: string): Promise<PasskeyInfo | null> {
+  const { data } = await db()
+    .from("auth_passkeys")
+    .select(PASSKEY_INFO_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+  return (data as PasskeyInfo) ?? null;
+}
+
+/**
+ * Delete one passkey. `userId` is a belt-and-braces scope so a self-service
+ * route can never remove someone else's credential even with a guessed id.
+ * Returns true if a row was removed.
+ */
+export async function deletePasskey(id: string, userId?: string): Promise<boolean> {
+  let q = db().from("auth_passkeys").delete().eq("id", id);
+  if (userId) q = q.eq("user_id", userId);
+  const { data, error } = await q.select("id");
+  if (error) throw error;
+  return ((data as { id: string }[]) ?? []).length > 0;
 }
 
 export async function updatePasskeyCounter(

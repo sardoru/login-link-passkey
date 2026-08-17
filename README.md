@@ -1,8 +1,8 @@
 # login-link-passkey
 
-> Drop a complete, tested **passwordless authentication** system into a Next.js App Router app — branded **magic-link email** (Resend) + **WebAuthn passkeys**, backed by **Supabase**, gated at the edge — together with the **admin dashboard that decides who gets in**: a role/permission matrix, invites, access codes, and a waitlist.
+> Drop a complete, tested **passwordless authentication** system into a Next.js App Router app — branded **magic-link email** (Resend) + **WebAuthn passkeys** with full passkey management, backed by **Supabase**, gated at the edge — together with the **admin dashboard that decides who gets in**: a role/permission matrix, invites, access codes, a waitlist, and per-user passkey control.
 
-This is a [Claude Code](https://claude.com/claude-code) **skill**. Invoke it with `/login-link-passkey` (or natural language like *"add magic-link auth"*, *"add passkeys"*, *"gate this app"*, *"add user management"*, *"roles and permissions"*) and it scaffolds the whole system into your project, optionally provisioning Supabase and locating a verified Resend domain along the way.
+This is a [Claude Code](https://claude.com/claude-code) **skill**. Invoke it with `/login-link-passkey` (or natural language like *"add magic-link auth"*, *"add passkeys"*, *"gate this app"*, *"manage passkeys"*, *"add user management"*, *"roles and permissions"*) and it scaffolds the whole system into your project, optionally provisioning Supabase and locating a verified Resend domain along the way.
 
 Verified against **Next 16 / React 19**: `next build` clean with zero warnings, every route typechecked, OG cards rendered as real PNGs. See [`CHANGELOG.md`](./CHANGELOG.md).
 
@@ -12,7 +12,8 @@ Verified against **Next 16 / React 19**: `next build` clean with zero warnings, 
 
 - **Edge gate** (`src/proxy.ts`, Next 16) — verifies a signed session (`jose`) on every request; unauthenticated users are routed to `/login`. Auth APIs, OG images, and the public entrances are excluded.
 - **Magic links** — single-use, 15-minute tokens; only the **SHA-256 hash** is stored. Branded email via Resend. Rate-limited.
-- **Passkeys** — usernameless (discoverable) sign-in plus **one-tap registration with no nickname prompt** — "Add passkey" just works.
+- **Passkeys** — usernameless (discoverable) sign-in plus **one-tap registration with no nickname prompt** — "Add passkey" just works. Labels are derived ("iPhone · Safari", "Windows Hello", "Security key"), never typed.
+- **Passkey management** — the account menu opens **Your passkeys**: every credential on the account with device label, synced badge, added / last-used dates; **add another** or **remove** any of them (removing the last one is allowed — the magic link always remains). Admins get the same per-user list in `/admin/users`, plus **remove**, **add on this device** (in-person / kiosk enrolment) and **email setup link** (a single-use magic link that lands on the one-tap prompt on *their* device — the only way to enrol someone remotely, since WebAuthn can't register a credential on hardware you don't hold).
 
 ### Access control
 
@@ -22,16 +23,16 @@ Verified against **Next 16 / React 19**: `next build` clean with zero warnings, 
 - **Invite links** — single-use, **expire in 3 days**. Bound to an email (accepting signs them straight in) or open (they confirm their address first). Revocable.
 - **Access codes** — one shareable code worth **N seats** (default 10, any number), optional expiry, **revocable**, with a redemption list.
 - **Waitlist** — a public `/waitlist` page; admins approve into a role, which provisions the account and emails the invite.
-- **Audit log** — append-only record of every admin action.
+- **Audit log** — append-only record of every admin action, including passkey removals and admin enrolments.
 
 ### Presentation
 
 - **Custom OG cards** — branded 1200×630 images on `/login`, `/invite/[token]` (personalized with the invitee's first name), `/join`, and `/waitlist`, with matching `twitter-image` routes.
-- **UI** — login screen, four public entrances sharing one shell, account menu (add passkey / admin link / sign out), and a dismissible "add a passkey" prompt. Styled with portable CSS tokens.
+- **UI** — login screen, four public entrances sharing one shell, account menu (passkeys · n / admin link / sign out), a passkey manager, and a dismissible "add a passkey" prompt that an admin's setup link can force open. Styled with portable CSS tokens.
 
 ### Store
 
-**Supabase** — `auth_users`, `auth_magic_links`, `auth_passkeys`, `auth_roles`, `auth_invites`, `auth_access_codes`, `auth_access_code_uses`, `auth_waitlist`, `auth_audit_log`. RLS on with **no policies** (default-deny); the server uses the service-role key only.
+**Supabase** — `auth_users`, `auth_magic_links`, `auth_passkeys`, `auth_roles`, `auth_invites`, `auth_access_codes`, `auth_access_code_uses`, `auth_waitlist`, `auth_audit_log`. RLS on with **no policies** (default-deny); the server uses the service-role key only. Three additive, idempotent migrations: `0001_auth`, `0002_admin`, `0003_passkeys`.
 
 ## How authorization works
 
@@ -45,7 +46,7 @@ Three layers, one source of truth:
 
 A stale token is harmless: at worst it renders an admin shell that then refuses every action. `/api/auth/me` re-signs the cookie whenever the database disagrees, so a role change takes effect on the user's next page load — no sign-out required.
 
-Escalation is blocked in both directions: you can't assign a role, grant a permission, or mint a role holding capabilities you don't have yourself, and the last active owner can't be demoted, suspended, or deleted.
+Escalation is blocked in both directions: you can't assign a role, grant a permission, or mint a role holding capabilities you don't have yourself, and the last active owner can't be demoted, suspended, or deleted. Admin passkey enrolment — which mints a credential that signs in *as* someone else — is gated by the sensitive `users.passkeys` capability plus the same role-conferral rule, tied to a challenge that names both target and admin, refused for suspended accounts, and audited.
 
 ## Prerequisites
 
@@ -64,7 +65,7 @@ All arguments are optional — the skill asks for anything it needs. Under the h
 
 1. Gathers brand + config (app name, tagline, accent color, from-address, owner email, site URL).
 2. Installs dependencies: `resend @supabase/supabase-js @simplewebauthn/server @simplewebauthn/browser jose` (+ `lucide-react`).
-3. Copies `templates/src/**` into your project and both SQL migrations into `supabase/`.
+3. Copies `templates/src/**` into your project and the three SQL migrations into `supabase/migrations/`.
 4. Wires the app shell (`<AuthProvider>`, `<AccountMenu/>`, `<PasskeyPrompt/>`).
 5. Sets the environment variables (see `templates/.env.local.example`).
 
@@ -89,6 +90,7 @@ See [`SKILL.md`](./SKILL.md) for the full procedure, [`reference/admin.md`](./re
 | `AUTH_INVITE_TTL_DAYS` | Optional. Invite-link lifetime, default `3` |
 | `AUTH_CODE_DEFAULT_USES` | Optional. Default seats on a new access code, default `10` |
 | `AUTH_WAITLIST_ENABLED` | Optional. `false` 404s `/waitlist` and refuses the API |
+| `AUTH_PASSKEY_SETUP_PATH` | Optional. Where an admin's passkey setup link lands, default `/?passkey=setup` — must render `<PasskeyPrompt/>` |
 | `AUTH_RP_ID` / `AUTH_RP_NAME` | Optional WebAuthn overrides (default: derived from request host) |
 
 ## Repository layout
@@ -100,22 +102,26 @@ reference/                     # admin.md, setup.md, email-design.md
 scripts/                       # find-resend-domain.sh, gen-secret.sh, provision-supabase.sh
 templates/                     # everything copied into your project
   src/lib/auth/**              #   engine: config, brand, session, db, webauthn, server
+                               #   passkeys: passkey-registration, passkey-admin
                                #   access control: permissions, rbac, admin-db, invites
                                #   mail: email, email-shell, email-invite
   src/lib/og/auth-og.tsx       #   shared OG card renderer
-  src/app/api/auth/**          #   magic start/verify, passkey, logout, me,
+  src/app/api/auth/**          #   magic start/verify, passkey register/auth,
+                               #   passkeys list/delete, logout, me,
                                #   invite accept, access-code redeem
-  src/app/api/admin/**         #   users, roles, invites, access-codes, waitlist, audit
+  src/app/api/admin/**         #   users (+ [id]/passkeys list/delete/options/verify/setup-link),
+                               #   roles, invites, access-codes, waitlist, audit
   src/app/admin/**             #   dashboard shell + six tabs
   src/app/{login,invite,join,waitlist}/**   #   public entrances + their OG cards
-  src/components/admin/**      #   dashboard UI + the permission matrices
-  src/components/{views,auth}/**            #   public screens + client auth UI
+  src/components/admin/**      #   dashboard UI, the permission matrices, passkeys modal
+  src/components/{views,auth}/**            #   public screens + client auth UI (passkey manager)
   src/proxy.ts                 #   edge gate (Next 16; rename to middleware.ts for Next 15)
   supabase/0001_auth.sql       #   users / magic links / passkeys (+ RLS)
   supabase/0002_admin.sql      #   roles / invites / codes / waitlist / audit (additive)
+  supabase/0003_passkeys.sql   #   passkey device metadata + users.passkeys grant (additive)
 ```
 
-`0002_admin.sql` is additive and idempotent — safe to run on a project already carrying `0001` with live users.
+`0002_admin.sql` and `0003_passkeys.sql` are additive and idempotent — safe to run on a project already carrying earlier migrations with live users. Upgrading a live install to passkey management is just `0003` plus re-copying the changed templates.
 
 ## Security notes
 
@@ -124,6 +130,7 @@ templates/                     # everything copied into your project
 - Seat claiming is a compare-and-swap on `uses`, so concurrent redemptions can't oversell the last seat. Invites are claimed before the account is created, so a lost race never provisions a user.
 - Sessions are HS256 JWTs in an **httpOnly**, `SameSite=Lax`, `Secure`-in-prod cookie.
 - The waitlist API always answers `{ok:true}` for a valid address (no account enumeration) and carries a honeypot field.
+- Self-service passkey deletion filters by `user_id` **and** id, so a guessed id can't touch someone else's credential. Admin on-behalf enrolment is the one place a credential is minted for another person: gated by `users.passkeys` + role conferral, tied to a challenge cookie carrying both target and admin (the self-service verify route rejects any challenge with a `by` claim), audited, and marked `created_by` on the row. Removing every passkey is allowed — the magic link is always a way back in.
 
 ## Installing the skill
 
@@ -131,7 +138,7 @@ templates/                     # everything copied into your project
 git clone https://github.com/sardoru/login-link-passkey.git ~/.claude/skills/login-link-passkey
 ```
 
-Then it's available as `/login-link-passkey` in any Claude Code session.
+Then it's available as `/login-link-passkey` in any Claude Code session. Copies already installed into host projects are owned by those projects — upgrading the skill does not upgrade them.
 
 ## License
 

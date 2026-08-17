@@ -37,7 +37,7 @@ create table if not exists auth_roles (
 insert into auth_roles (key, label, description, permissions, rank, is_system) values
   ('owner',   'Owner',   'Full control, including roles and deletion.', '["*"]'::jsonb, 0, true),
   ('admin',   'Admin',   'Manage users, invites, access codes, waitlist.',
-   '["app.access","admin.access","users.read","users.write","users.permissions","roles.read","invites.read","invites.write","invites.revoke","codes.read","codes.write","codes.revoke","waitlist.read","waitlist.approve","audit.read"]'::jsonb, 10, true),
+   '["app.access","admin.access","users.read","users.write","users.permissions","users.passkeys","roles.read","invites.read","invites.write","invites.revoke","codes.read","codes.write","codes.revoke","waitlist.read","waitlist.approve","audit.read"]'::jsonb, 10, true),
   ('manager', 'Manager', 'Invite people and clear the waitlist.',
    '["app.access","admin.access","users.read","invites.read","invites.write","codes.read","waitlist.read","waitlist.approve"]'::jsonb, 20, true),
   ('member',  'Member',  'Standard app access.', '["app.access"]'::jsonb, 50, true)

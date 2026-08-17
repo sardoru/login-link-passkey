@@ -1,15 +1,26 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getSession, challengeCookieOptions } from "@/lib/auth/server";
+import { requirePermission } from "@/lib/auth/rbac";
 import { finishRegistration } from "@/lib/auth/passkey-registration";
+import { passkeyTarget } from "@/lib/auth/passkey-admin";
 import { verifyChallenge } from "@/lib/auth/session";
+import { challengeCookieOptions } from "@/lib/auth/server";
 import { CHALLENGE_COOKIE_REG } from "@/lib/auth/config";
+import { audit } from "@/lib/auth/admin-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+type Ctx = { params: Promise<{ id: string }> };
+
+/** POST /api/admin/users/[id]/passkeys/verify — finish the on-behalf enrolment. */
+export async function POST(req: NextRequest, ctx: Ctx) {
+  const { id } = await ctx.params;
+  const g = await requirePermission("users.passkeys");
+  if (!g.ok) return g.response;
+  const { actor } = g;
+
+  const t = await passkeyTarget(actor, id, { forEnrol: true });
+  if (!t.ok) return t.response;
 
   const body = await req.json().catch(() => null);
   if (!body?.response)
@@ -18,8 +29,8 @@ export async function POST(req: NextRequest) {
   const payload = await verifyChallenge(
     req.cookies.get(CHALLENGE_COOKIE_REG)?.value
   );
-  // `by` is only set on admin on-behalf challenges — never accept one here.
-  if (!payload || payload.sub !== session.sub || payload.by)
+  // Must be the challenge minted by /options for THIS target by THIS admin.
+  if (!payload || payload.sub !== t.target.id || payload.by !== actor.user.id)
     return NextResponse.json({ error: "Challenge expired — try again." }, { status: 400 });
 
   let label = "";
@@ -28,12 +39,21 @@ export async function POST(req: NextRequest) {
       req,
       response: body.response,
       expectedChallenge: String(payload.ch),
-      userId: session.sub,
+      userId: t.target.id,
+      createdBy: actor.user.id,
     }));
   } catch (e) {
-    console.error("[auth] passkey/register/verify", e);
+    console.error("[admin] passkeys/verify", e);
     return NextResponse.json({ error: "Could not verify passkey." }, { status: 400 });
   }
+
+  await audit({
+    actorId: actor.user.id,
+    actorEmail: actor.user.email,
+    action: "passkey.enrolled",
+    target: t.target.email,
+    meta: { label },
+  });
 
   const res = NextResponse.json({ ok: true, label });
   res.cookies.set(CHALLENGE_COOKIE_REG, "", {
