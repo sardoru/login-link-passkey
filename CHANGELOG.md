@@ -6,6 +6,109 @@ rather than a versioned package, so entries are grouped by date.
 
 ---
 
+## 2026-08-17 — Passkey management: delete, add more, and admin enrolment
+
+Passkeys stopped being a one-shot "Add passkey → Passkey enabled" flag. Users
+manage every credential on their account, and admins can remove a passkey,
+enrol one in person, or email a setup link from the Users tab.
+
+### Added
+
+- **`PasskeyManager`** (`components/auth/passkey-manager.tsx`) — opened from
+  the account menu (*Passkeys · n*): lists every passkey with a derived device
+  label, a **synced** badge for multi-device credentials, added / last-used
+  dates, and an "admin-enrolled" tag; **Add another passkey** and per-row
+  **Remove** (confirm dialog warns when it's the last one). Styled with the auth
+  tokens only, so it ships in `--no-admin` installs.
+- **Self-service API** — `GET /api/auth/passkeys`, `DELETE /api/auth/passkeys/[id]`
+  (scoped to the session's `user_id`; audited as `passkey.self_deleted`).
+- **`PasskeysModal`** (`components/admin/passkeys-modal.tsx`) — the fingerprint
+  button on every `/admin/users` row (now shows the count) opens the user's
+  passkey list. With `users.passkeys`: **Remove**, **Add on this device**
+  (in-person / kiosk enrolment, WebAuthn ceremony in the admin's browser bound
+  to the target user), and **Email setup link** (single-use magic link landing
+  on the forced one-tap prompt on *their* device — the only remote option,
+  because WebAuthn can't register a credential on hardware you don't hold). The
+  URL is returned for copy-paste when email fails.
+- **Admin API** — `GET|/api/admin/users/[id]/passkeys`,
+  `DELETE …/passkeys/[passkeyId]`, `POST …/passkeys/options` + `/verify`,
+  `POST …/passkeys/setup-link`.
+- **`users.passkeys`** permission (Users group, sensitive). Seeded into `admin`
+  by `0003` (and in the `0002` seed for fresh installs); `owner` has `*`.
+- **`0003_passkeys.sql`** — `auth_passkeys` gains `label`, `device_type`,
+  `backed_up`, `aaguid`, `created_by`; grants `users.passkeys` to the seeded
+  `admin` role. Additive + idempotent; safe on live projects.
+- **Derived passkey labels** (`deviceLabelFromRequest`) — "iPhone · Safari",
+  "Mac · Chrome", "Windows Hello", "Security key · Mac" — from the UA and the
+  authenticator attachment. Still **no nickname prompt**.
+- **`sendPasskeySetupEmail`** / `passkeySetupHtml` on the shared email shell.
+- **`AUTH_PASSKEY_SETUP_PATH`** (default `/?passkey=setup`) — where the setup
+  link lands; must render `<PasskeyPrompt/>`.
+- `passkey-registration.ts` (shared ceremony for self + admin routes) and
+  `passkey-admin.ts` (`passkeyTarget` guard).
+- `passkey-client.ts`: `enrollPasskeyForUser`, `listMyPasskeys`,
+  `removeMyPasskey`, `passkeyLabel`, `fmtPasskeyDate`; `addPasskey()` now
+  returns the derived `label`.
+
+### Changed
+
+- **`AccountMenu`** — *Passkey enabled* (static) → **Passkeys · n** (opens the
+  manager); *Add a passkey* stays until the first one exists, with a small
+  *Manage passkeys…* link underneath.
+- **`PasskeyPrompt`** honours `?passkey=setup`: opens even if previously
+  dismissed or a passkey already exists, uses "your admin sent you here" copy,
+  and strips the param on success. A dismissal in that mode is not remembered.
+- **`/api/auth/me`** returns `passkeyCount` alongside `hasPasskey`.
+- **`/api/auth/passkey/register/*`** rewritten on the shared helper; `verify`
+  now rejects any challenge carrying an admin `by` claim.
+- **`UsersPanel`** takes `canPasskeys` + `selfId`; the inline fingerprint next
+  to the name is replaced by the action button. `users/page.tsx` passes both.
+- `db.ts`: `PasskeyInfo`, `listPasskeyInfo`, `getPasskeyInfo`, `deletePasskey`;
+  `createPasskey` accepts the new metadata.
+- `provision-supabase.sh` applies all three migrations.
+
+### Security
+
+- Self-service delete filters by `user_id` **and** id.
+- On-behalf enrolment mints a credential that signs in as someone else, so it is
+  gated by `users.passkeys` + `canConferRole` (no enrolling above your own role;
+  owners bypass; your own row always allowed), refused for suspended accounts,
+  tied to a challenge cookie that names both target and admin, and audited
+  (`passkey.enrolled`, `created_by` on the row).
+- Removing every passkey is permitted: the magic link is always a way back in,
+  and a stolen-device story ("remove it now") must not be blocked.
+- Deleting a passkey does not revoke sessions (they're JWTs) — documented.
+
+### Verified
+
+Templates copied into a fresh Next 16.3.1 / React 19.2 app
+(`create-next-app --ts --tailwind --app --src-dir`) with real deps
+(`@simplewebauthn/server 13.3`, `jose 6`, `resend 6`, `supabase-js 2.112`):
+
+- `tsc --noEmit` clean; `next build` clean, **zero warnings**, 44 routes
+  emitted incl. the 7 new passkey routes; proxy detected.
+- `next start` smoke: all nine passkey endpoints (self-service list/delete,
+  register options/verify, admin list/delete/options/verify/setup-link) answer
+  **401** with no session; `/?passkey=setup` → 307 `/login` when signed out.
+- `eslint src` — the four pre-existing `react-hooks/set-state-in-effect`
+  baseline hits (`ui.tsx`, `auth-context`, `passkey-prompt`, `roles-panel`)
+  and two unused-import warnings; **no new findings** from this work.
+- The WebAuthn ceremonies themselves need a real browser + authenticator and
+  were not exercised in CI; the routes reuse the previously verified
+  `verifyRegistrationResponse` path unchanged.
+
+### Known / open
+
+- The GitHub repo (`sardoru/login-link-passkey`) is the source of truth for
+  the skill; `~/.claude/skills/login-link-passkey` is a plain copy — keep them
+  in sync by pulling the repo into the skills dir.
+- `/intake-portal-login` still carries its own template copy and does not get
+  passkey management automatically.
+- No per-passkey rename (by design — labels are derived); no "sign out other
+  sessions" — sessions are stateless JWTs.
+
+---
+
 ## 2026-08-08 — Admin dashboard, RBAC, invites, access codes, waitlist, OG cards
 
 The skill grew from "add passwordless auth" to "add passwordless auth **and the

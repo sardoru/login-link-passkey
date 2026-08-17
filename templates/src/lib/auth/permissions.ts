@@ -29,6 +29,12 @@ export const PERMISSIONS: PermissionDef[] = [
     group: "Users",
     sensitive: true,
   },
+  {
+    key: "users.passkeys",
+    label: "Manage users' passkeys (remove, enrol, send setup link)",
+    group: "Users",
+    sensitive: true,
+  },
 
   { key: "roles.read", label: "View roles", group: "Roles" },
   {

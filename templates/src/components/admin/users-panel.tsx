@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { AdminUser, Role } from "./types";
 import { PermissionMatrix } from "./permission-matrix";
+import { PasskeysModal } from "./passkeys-modal";
 import {
   Panel,
   TableWrap,
@@ -36,10 +37,20 @@ interface Payload {
   roles: Role[];
 }
 
-export function UsersPanel({ canWrite, canDelete, canEditPerms }: {
+export function UsersPanel({
+  canWrite,
+  canDelete,
+  canEditPerms,
+  canPasskeys = false,
+  selfId,
+}: {
   canWrite: boolean;
   canDelete: boolean;
   canEditPerms: boolean;
+  /** `users.passkeys` — remove / enrol / send setup link. Viewing needs only users.read. */
+  canPasskeys?: boolean;
+  /** The signed-in admin's user id, so their own row gets the self-service copy. */
+  selfId?: string;
 }) {
   const [q, setQ] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
@@ -54,6 +65,7 @@ export function UsersPanel({ canWrite, canDelete, canEditPerms }: {
   );
   const [adding, setAdding] = useState(false);
   const [permTarget, setPermTarget] = useState<AdminUser | null>(null);
+  const [passkeyTarget, setPasskeyTarget] = useState<AdminUser | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -171,12 +183,7 @@ export function UsersPanel({ canWrite, canDelete, canEditPerms }: {
                             {(u.name ?? u.email).charAt(0).toUpperCase()}
                           </span>
                           <div className="min-w-0">
-                            <p className="truncate font-medium text-ink">
-                              {u.name ?? "—"}
-                              {u.passkey_count ? (
-                                <Fingerprint className="ml-1.5 inline h-3.5 w-3.5 text-brass" />
-                              ) : null}
-                            </p>
+                            <p className="truncate font-medium text-ink">{u.name ?? "—"}</p>
                             <p className="truncate text-xs text-inksoft">{u.email}</p>
                           </div>
                         </div>
@@ -210,6 +217,23 @@ export function UsersPanel({ canWrite, canDelete, canEditPerms }: {
                       <td className="px-3 py-3 text-inksoft">{fmtDate(u.last_login_at)}</td>
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-1.5">
+                          <Btn
+                            onClick={() => setPasskeyTarget(u)}
+                            title={
+                              u.passkey_count
+                                ? `${u.passkey_count} passkey${u.passkey_count === 1 ? "" : "s"} — view${canPasskeys ? ", remove, or add" : ""}`
+                                : canPasskeys
+                                  ? "No passkeys — add one or email a setup link"
+                                  : "No passkeys"
+                            }
+                          >
+                            <Fingerprint
+                              className={
+                                u.passkey_count ? "h-3.5 w-3.5 text-brass" : "h-3.5 w-3.5 text-inkfaint"
+                              }
+                            />
+                            {u.passkey_count ?? 0}
+                          </Btn>
                           {canEditPerms && (
                             <Btn onClick={() => setPermTarget(u)} title="Edit permissions">
                               <SlidersHorizontal className="h-3.5 w-3.5" />
@@ -245,6 +269,16 @@ export function UsersPanel({ canWrite, canDelete, canEditPerms }: {
           </TableWrap>
         )}
       </Panel>
+
+      {passkeyTarget && (
+        <PasskeysModal
+          user={passkeyTarget}
+          self={passkeyTarget.id === selfId}
+          canManage={canPasskeys}
+          onClose={() => setPasskeyTarget(null)}
+          onChanged={reload}
+        />
+      )}
 
       {adding && (
         <AddUserModal

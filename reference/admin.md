@@ -17,6 +17,7 @@ the role grid and the per-user matrix automatically — no migration needed.
 | `users.write` | Users | Create, rename, re-role, suspend |
 | `users.delete` | Users | Delete accounts ⚠ |
 | `users.permissions` | Users | Edit per-user overrides ⚠ |
+| `users.passkeys` | Users | Remove a user's passkeys, enrol one on this device, email a setup link ⚠ |
 | `roles.read` | Roles | View roles |
 | `roles.write` | Roles | Create/edit/delete roles ⚠ |
 | `invites.read` / `invites.write` / `invites.revoke` | Invites | See, send, revoke |
@@ -30,7 +31,7 @@ the role grid and the per-user matrix automatically — no migration needed.
 | Role | Permissions | Notes |
 | --- | --- | --- |
 | `owner` | `["*"]` | Everything. Bypasses escalation checks. Can't be reduced to zero — the last active owner is protected. |
-| `admin` | Everything except `users.delete` and `roles.write` | The day-to-day operator role. |
+| `admin` | Everything except `users.delete` and `roles.write` (incl. `users.passkeys`, granted by `0003`) | The day-to-day operator role. |
 | `manager` | Read + invites + waitlist | Can grow the team, can't restructure it. |
 | `member` | `app.access` | Default for new signups. |
 
@@ -74,13 +75,17 @@ cookie when they diverge, so role changes land on the user's next page load.
 - `blocksLastOwner` — the last active owner can't be demoted, suspended, or
   deleted.
 - You can't change your own role or status, or delete your own account.
+- `passkeyTarget` — you can't remove or enrol passkeys for a user whose role you
+  couldn't confer (`canConferRole`), because an on-behalf passkey signs in *as
+  them*. Your own row is always allowed.
 
-Owners bypass the first three.
+Owners bypass the first three and the passkey rule.
 
-## Data model (`0002_admin.sql`)
+## Data model (`0002_admin.sql` + `0003_passkeys.sql`)
 
 ```
 auth_users            + name, role, status, permissions(jsonb), invited_by, invited_at, notes
+auth_passkeys         + label, device_type, backed_up, aaguid, created_by   (0003)
 auth_roles            key, label, description, permissions(jsonb), rank, is_system
 auth_invites          email?, name, role, token_hash, expires_at, accepted_at/by, revoked_at, sent_at
 auth_access_codes     code, label, role, max_uses, uses, expires_at, revoked_at
@@ -138,6 +143,46 @@ Redeeming (`POST /api/auth/access-code {code,email,name}`):
 An email that already has an account doesn't burn a seat — it just gets a
 sign-in link.
 
+### Passkeys (0003)
+
+Every passkey row carries a derived `label` ("iPhone · Safari", "Windows
+Hello", "Security key · Mac"), `device_type` (`singleDevice` /
+`multiDevice`), `backed_up` (synced to iCloud Keychain / Google PM / a
+password manager), `aaguid`, and `created_by` (null ⇒ self-enrolled, else the
+admin who enrolled it). No nickname is ever asked for.
+
+**Self-service** (any signed-in user, scoped to their own `user_id`):
+
+- `GET /api/auth/passkeys` → `{passkeys:[…]}` metadata only, no key material.
+- `POST /api/auth/passkey/register/{options,verify}` — add one more (the
+  options exclude everything the account already holds).
+- `DELETE /api/auth/passkeys/[id]` — remove; audited as `passkey.self_deleted`.
+  Removing the last one is allowed — the magic link always remains.
+
+**Admin** (`/admin/users` → fingerprint button → `PasskeysModal`):
+
+- `GET /api/admin/users/[id]/passkeys` (`users.read`) — list.
+- `DELETE /api/admin/users/[id]/passkeys/[passkeyId]` (`users.passkeys`) —
+  audited as `passkey.deleted`.
+- `POST /api/admin/users/[id]/passkeys/options` + `/verify`
+  (`users.passkeys`) — **enrol on the admin's current device**, credential bound
+  to the target. For in-person setup or a shared kiosk. The challenge cookie
+  carries `{ch, sub: target, by: admin}`; the self-service verify route rejects
+  any challenge with a `by` claim, and this route rejects any without a
+  matching one. Refused for suspended targets. Audited as `passkey.enrolled`;
+  the row's `created_by` shows as "admin-enrolled".
+- `POST /api/admin/users/[id]/passkeys/setup-link` (`users.passkeys`) — mints a
+  single-use 15-min magic link with `next=PASSKEY_SETUP_PATH` (default
+  `/?passkey=setup`) and emails it (`passkeySetupHtml`); the URL is returned
+  for copy-paste if delivery fails. Counts toward the target's 3-per-10-min
+  link rate limit. `<PasskeyPrompt/>` opens on `?passkey=setup` regardless of
+  prior dismissal or existing passkeys, and strips the param on success.
+  Audited as `passkey.setup_sent`.
+
+Why two "add" paths: WebAuthn only registers a credential on the authenticator
+that runs the ceremony. If the person is in the room, use their device via
+*Add on this device*; if not, the setup link is the only honest option.
+
 ### Waitlist
 
 Public `POST /api/waitlist {email,name,note,source,company}` — `company` is a
@@ -155,6 +200,10 @@ account and emails a 3-day invite in one step.
 | `POST /api/admin/users` | `users.write` + `invites.write` |
 | `PATCH /api/admin/users/[id]` | `users.write`, or `users.permissions` when the body carries `permissions` |
 | `DELETE /api/admin/users/[id]` | `users.delete` |
+| `GET /api/admin/users/[id]/passkeys` | `users.read` |
+| `DELETE /api/admin/users/[id]/passkeys/[passkeyId]` | `users.passkeys` |
+| `POST /api/admin/users/[id]/passkeys/options` · `/verify` | `users.passkeys` |
+| `POST /api/admin/users/[id]/passkeys/setup-link` | `users.passkeys` |
 | `GET /api/admin/roles` | `roles.read` |
 | `PUT` / `DELETE /api/admin/roles` | `roles.write` |
 | `GET /api/admin/invites` | `invites.read` |
@@ -166,6 +215,7 @@ account and emails a 3-day invite in one step.
 | `GET /api/admin/waitlist` | `waitlist.read` |
 | `PATCH /api/admin/waitlist` | `waitlist.approve` |
 | `GET /api/admin/audit` | `audit.read` |
+| `GET /api/auth/passkeys` · `DELETE /api/auth/passkeys/[id]` | signed in (own passkeys only) |
 | `POST /api/auth/invite/accept` | public (token) |
 | `POST /api/auth/access-code` | public (code) |
 | `POST /api/waitlist` | public |

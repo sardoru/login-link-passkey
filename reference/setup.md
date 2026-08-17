@@ -29,14 +29,14 @@ The `provision-supabase.sh` script uses these endpoints with a `sbp_…` token:
 - `POST /v1/projects` — `{name, organization_id, region, db_pass}` → returns `id` (ref).
 - `GET  /v1/projects/{ref}` — poll `status` until `ACTIVE_HEALTHY` (~1–3 min).
 - `POST /v1/projects/{ref}/database/query` — `{query: <SQL>}` runs each migration
-  (`0001_auth.sql`, then `0002_admin.sql`, in order).
+  (`0001_auth.sql`, `0002_admin.sql`, then `0003_passkeys.sql`, in order).
 - `GET  /v1/projects/{ref}/api-keys?reveal=true` — read the `service_role` key.
 
 Manual alternative: open the project's **SQL editor**, run
-`templates/supabase/0001_auth.sql` and then `0002_admin.sql`, then copy Project
+`templates/supabase/0001_auth.sql`, `0002_admin.sql`, then `0003_passkeys.sql`, then copy Project
 URL + the `service_role` key from **Project Settings → API**.
 
-`0002_admin.sql` is additive and idempotent (`add column if not exists`,
+`0002_admin.sql` and `0003_passkeys.sql` are additive and idempotent (`add column if not exists`,
 `on conflict do nothing`) — safe to re-run, and safe on a project that already
 has 0001 applied with live users.
 

@@ -6,13 +6,17 @@ description: >-
   app behind it, and ship the admin dashboard that manages who gets in. Drops in
   a tested auth engine (jose sessions, an edge proxy gate, single-use SHA-256-hashed
   links), a beautifully designed (non-bland) Resend email, one-tap "Add passkey"
-  with NO device-name prompt, plus user management with a granular per-user and
-  per-role permission matrix, add-user-and-send-welcome-email, 3-day invite links,
-  multi-seat revocable access codes, a public waitlist, and custom OG cards on
-  every login/invite link. Use when the user says 'add login', 'magic link auth',
-  'passwordless auth', 'add passkeys', 'gate this app', 'login-link-passkey',
-  'add authentication', 'admin dashboard', 'user management', 'roles and
-  permissions', 'invite users', 'invite links', 'access codes', or 'waitlist'.
+  with NO device-name prompt, multi-passkey management (list / add another /
+  remove, self-service and from the admin panel — including enrolling a passkey
+  for a user in person or emailing them a setup link), plus user management with
+  a granular per-user and per-role permission matrix,
+  add-user-and-send-welcome-email, 3-day invite links, multi-seat revocable
+  access codes, a public waitlist, and custom OG cards on every login/invite
+  link. Use when the user says 'add login', 'magic link auth', 'passwordless
+  auth', 'add passkeys', 'manage passkeys', 'delete a passkey', 'gate this app',
+  'login-link-passkey', 'add authentication', 'admin dashboard', 'user
+  management', 'roles and permissions', 'invite users', 'invite links', 'access
+  codes', or 'waitlist'.
 argument-hint: '[--app "App Name"] [--from "Name <login@domain>"] [--owner you@x.com] [--accent #HEX] [--no-admin] [--no-waitlist]'
 user-invocable: true
 tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
@@ -38,7 +42,17 @@ routes typecheck, OG cards render as real PNGs.
 - **Magic links** — single-use, 15-min tokens; only the **SHA-256 hash** is
   stored. Branded email via Resend. Rate-limited.
 - **Passkeys** — usernameless (discoverable) sign-in + **one-tap registration
-  with no nickname prompt**.
+  with no nickname prompt**. Labels are derived ("iPhone · Safari", "Windows
+  Hello", "Security key"), never typed.
+- **Passkey management** — the account menu opens **Your passkeys**: every
+  credential on the account with device label, synced badge, added / last-used
+  dates; **add another** or **remove** any of them (removing the last one is
+  allowed — the magic link always remains). Admins get the same list per user
+  in `/admin/users`, plus **remove**, **add on this device** (in-person /
+  kiosk enrolment) and **email setup link** (a single-use magic link that lands
+  on the one-tap prompt on *their* device — the only way to enrol someone
+  remotely, since WebAuthn can't register a credential on hardware you don't
+  hold).
 
 **Access control**
 
@@ -66,7 +80,9 @@ matching `twitter-image` routes.
 **Supabase store** — `auth_users / auth_magic_links / auth_passkeys / auth_roles /
 auth_invites / auth_access_codes / auth_access_code_uses / auth_waitlist /
 auth_audit_log`, RLS on with **no policies** (default-deny); the server uses the
-service-role key only.
+service-role key only. Three migrations: `0001_auth`, `0002_admin`,
+`0003_passkeys` (device metadata + `users.passkeys` grant) — all additive and
+idempotent.
 
 ## Prerequisites (verify first)
 
@@ -109,18 +125,19 @@ Copy `templates/src/**` → the project's `src/**` (preserve structure), and
 | Template | Purpose |
 | --- | --- |
 | `src/lib/auth/{config,brand,allowlist,tokens,session,db,webauthn,server}.ts` | Auth engine + brand |
+| `src/lib/auth/{passkey-registration,passkey-admin}.ts` | Shared WebAuthn registration ceremony; admin passkey guards |
 | `src/lib/auth/{permissions,rbac,admin-db,invites}.ts` | Permission catalog, guards, admin queries, invite/code tokens |
 | `src/lib/auth/{email,email-shell,email-invite}.ts` | Resend sends: magic link, invite/welcome, waitlist |
 | `src/lib/og/auth-og.tsx` | Shared OG card renderer |
-| `src/app/api/auth/**` | magic start/verify, passkey options/verify, logout, me, invite accept, access-code redeem |
-| `src/app/api/admin/**` | users, roles, invites, access-codes, waitlist, audit |
+| `src/app/api/auth/**` | magic start/verify, passkey options/verify, **passkeys list/delete**, logout, me, invite accept, access-code redeem |
+| `src/app/api/admin/**` | users (+ **`[id]/passkeys` list/delete/options/verify/setup-link**), roles, invites, access-codes, waitlist, audit |
 | `src/app/api/waitlist/route.ts` | Public waitlist signup |
 | `src/proxy.ts` | Edge gate (Next 16) |
 | `src/app/{login,invite/[token],join,waitlist}/**` | Public entrances + their OG/Twitter cards |
 | `src/app/admin/**` | Dashboard shell + six tabs |
 | `src/components/views/{auth-shell,login,invite,join,waitlist}.tsx` | Public screens |
-| `src/components/admin/**` | Dashboard UI (ui primitives, panels, permission matrix) |
-| `src/components/auth/**`, `src/components/brand-mark.tsx` | Client auth UI |
+| `src/components/admin/**` | Dashboard UI (ui primitives, panels, permission matrix, **passkeys modal**) |
+| `src/components/auth/**`, `src/components/brand-mark.tsx` | Client auth UI (account menu, passkey prompt, **passkey manager**) |
 | `src/styles/auth-tokens.css` | Color tokens for the UI |
 
 Then:
@@ -180,7 +197,10 @@ SUPABASE_ACCESS_TOKEN=sbp_xxx bash scripts/provision-supabase.sh <project-name> 
 #   → creates the project, applies BOTH migrations, prints URL + service-role key
 ```
 
-Otherwise apply `0001_auth.sql` then `0002_admin.sql` in the Supabase SQL editor.
+Otherwise apply `0001_auth.sql`, `0002_admin.sql`, then `0003_passkeys.sql` in the
+Supabase SQL editor. **Upgrading a live install from before 2026-08-17?** Run
+`0003_passkeys.sql` alone — it only adds columns and grants `users.passkeys` to
+the seeded `admin` role.
 Write all keys to `.env.local` (template: `templates/.env.local.example`) and set
 the same vars in the host (`vercel env add <NAME> production`). `.env.local` must
 be gitignored.
@@ -208,7 +228,10 @@ curl -s -X POST -H 'content-type: application/json' -d '{"email":"stranger@x.com
 
 Then sign in as the bootstrap owner, open `/admin`, and verify the round trip:
 add a user → the welcome email arrives → the invite link works → the new user
-appears with the right role.
+appears with the right role. Then the passkey round trip: account menu → **Add a
+passkey** → **Passkeys 1** → add another → remove one; in `/admin/users` open a
+row's fingerprint button → **Email setup link** → the mail arrives → opening it
+on a phone lands on the forced one-tap prompt.
 
 ## How authorization works
 
@@ -229,9 +252,37 @@ Escalation is blocked in both directions: you can't assign a role, grant a
 permission, or mint a role holding capabilities you don't have yourself, and the
 last active owner can't be demoted, suspended, or deleted.
 
+## Passkey management — how it works
+
+- **Self-service** — `AccountMenu` shows *Add a passkey* until one exists, then
+  *Passkeys · n*, which opens `PasskeyManager` (`GET /api/auth/passkeys`,
+  `DELETE /api/auth/passkeys/[id]`, both scoped to the session's user id).
+  Registration always excludes the credentials the account already holds, so a
+  second passkey on the same authenticator is refused by the platform, not by us.
+- **Admin** — the fingerprint button on every `/admin/users` row opens
+  `PasskeysModal`. Viewing needs `users.read`; remove / add / setup-link need the
+  new **`users.passkeys`** capability (sensitive; seeded into `admin`, `owner`
+  has `*`).
+- **Add on this device** runs the WebAuthn ceremony in the admin's browser with
+  the *target's* user handle — for handing a phone to a colleague or seeding a
+  shared kiosk. The resulting credential signs in **as the target**, so it's
+  guarded by `canConferRole` (you can't enrol for a role above your own; owners
+  bypass), refused for suspended accounts, and audited as `passkey.enrolled`
+  with `created_by` recorded on the row (shown as "admin-enrolled").
+- **Email setup link** mints a single-use 15-min magic link with
+  `next=PASSKEY_SETUP_PATH` (default `/?passkey=setup`). After sign-in,
+  `<PasskeyPrompt/>` sees `?passkey=setup` and opens even if the user dismissed
+  it before or already has a passkey; it strips the param on success. If your
+  proxy matcher is narrowed so `/` doesn't render `<PasskeyPrompt/>`, point
+  `AUTH_PASSKEY_SETUP_PATH` at an authed page that does.
+- **Deleting** never signs anyone out — sessions are JWTs — it only stops that
+  authenticator from completing a future passkey sign-in. Deleting a user still
+  cascades to their passkeys.
+
 ## Customization
 
 - **Gate scope** — narrow the `matcher` in `proxy.ts` to protect only some routes.
+- **Passkey setup landing** — `AUTH_PASSKEY_SETUP_PATH` (default `/?passkey=setup`).
 - **Drop the waitlist** — set `AUTH_WAITLIST_ENABLED=false` (page 404s, API
   refuses), and remove the link from `views/login.tsx`.
 - **Drop access codes** — delete `app/join/**`, `api/auth/access-code`,
@@ -256,6 +307,14 @@ last active owner can't be demoted, suspended, or deleted.
   oversell the last seat. Invites are claimed before the account is created, so
   a lost race never provisions a user.
 - Sessions: HS256 JWT in an **httpOnly**, `SameSite=Lax`, `Secure`-in-prod cookie.
+- **Passkeys**: the self-service delete route filters by `user_id` as well as
+  id, so a guessed id can't touch someone else's credential. Admin on-behalf
+  enrolment is the one place a credential is minted for another person — it is
+  gated by `users.passkeys` + role conferral, refused for suspended accounts,
+  bound to a challenge cookie that carries both the target and the acting admin
+  (the self-service verify route rejects any challenge that has a `by` claim),
+  and audited. Removing every passkey is allowed because the magic link is
+  always a way back in.
 - Supabase: RLS on, **no policies** → the anon key reads nothing; all access is
   through the server-only service-role key.
 - The waitlist API always answers `{ok:true}` for a valid address (no account
@@ -282,6 +341,13 @@ last active owner can't be demoted, suspended, or deleted.
   `@simplewebauthn/server`, `resend`, `@supabase/supabase-js`, and `crypto`.
 - `upsertUser` only writes the fields you pass, so signing in never clobbers a
   name or demotes a role set in the dashboard.
+- **Adding a permission key does not grant it to already-seeded roles** — the
+  `auth_roles` rows were written before the key existed. `0003_passkeys.sql`
+  handles `users.passkeys` for `admin`; any *project* key you add still needs a
+  manual grant in `/admin/roles` (`owner` holds `*` and is fine).
+- `InvalidStateError` from `startRegistration` means the authenticator already
+  holds a credential for this account (we pass `excludeCredentials`) — the UI
+  says so; it isn't a bug.
 
 See `reference/admin.md` for the permission catalog, data model, and API
 reference; `reference/setup.md` for the provisioning playbook; and

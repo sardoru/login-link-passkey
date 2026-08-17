@@ -2,7 +2,7 @@
 // (RESEND_API_KEY) from AUTH_EMAIL_FROM, on the shared branded shell.
 
 import { BRAND } from "./brand";
-import { INVITE_TTL_DAYS } from "./config";
+import { INVITE_TTL_DAYS, MAGIC_TTL_MIN } from "./config";
 import { emailShell, p, esc, codeBlock } from "./email-shell";
 import { send } from "./email";
 
@@ -61,6 +61,52 @@ Accept your invitation (expires in ${days()}, single use):
 ${o.url}
 
 No password needed — you'll sign in with a secure link or a passkey.`,
+  });
+}
+
+// ── Passkey setup (admin-initiated) ─────────────────────────────────────────
+
+export function passkeySetupHtml(o: {
+  url: string;
+  name?: string | null;
+  inviterName?: string | null;
+}): string {
+  const who = o.inviterName ? `${esc(o.inviterName)} asked you` : "You've been asked";
+  return emailShell({
+    preheader: `Add a passkey to ${BRAND.appName} — Face ID / Touch ID instead of email links.`,
+    title: `Set up a passkey for ${BRAND.appName}`,
+    heading: "Add a passkey",
+    badge: "Passkey",
+    body:
+      p(`${greeting(o.name)} ${who} to add a <strong>passkey</strong> to your ${esc(BRAND.appName)} account.`) +
+      p(
+        `Open the link below <strong>on the device you want to sign in from</strong>. It signs you in, then offers a one-tap prompt to save a passkey with Face ID, Touch ID, or Windows Hello. No password, no device name to type.`
+      ) +
+      p(
+        `<span style="color:${BRAND.email.muted};font-size:13px;">The link expires in ${MAGIC_TTL_MIN} minutes and can be used once. You can add more passkeys later from your account menu.</span>`
+      ),
+    cta: { label: "Sign in & add a passkey", url: o.url },
+    altUrl: o.url,
+    footnote: `If you weren&rsquo;t expecting this, you can ignore it — nothing changes on your account until you open the link.`,
+  });
+}
+
+export async function sendPasskeySetupEmail(o: {
+  to: string;
+  url: string;
+  name?: string | null;
+  inviterName?: string | null;
+}): Promise<void> {
+  await send({
+    to: o.to,
+    subject: `Set up a passkey for ${BRAND.appName}`,
+    html: passkeySetupHtml(o),
+    text: `${o.inviterName ? `${o.inviterName} asked you` : "You've been asked"} to add a passkey to your ${BRAND.appName} account.
+
+Open this link on the device you want to sign in from (expires in ${MAGIC_TTL_MIN} minutes, single use):
+${o.url}
+
+It signs you in and then offers a one-tap prompt to save a passkey (Face ID / Touch ID / Windows Hello).`,
   });
 }
 

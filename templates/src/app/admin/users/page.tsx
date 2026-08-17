@@ -13,6 +13,8 @@ export default async function Page() {
       canWrite={can(actor.perms, "users.write")}
       canDelete={can(actor.perms, "users.delete")}
       canEditPerms={can(actor.perms, "users.permissions")}
+      canPasskeys={can(actor.perms, "users.passkeys")}
+      selfId={actor.user.id}
     />
   );
 }

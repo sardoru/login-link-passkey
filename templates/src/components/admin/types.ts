@@ -1,6 +1,7 @@
 import type { PermissionDef, UserOverrides } from "@/lib/auth/permissions";
+import type { PasskeyInfo } from "../auth/passkey-client";
 
-export type { PermissionDef, UserOverrides };
+export type { PermissionDef, UserOverrides, PasskeyInfo };
 
 export interface AdminUser {
   id: string;

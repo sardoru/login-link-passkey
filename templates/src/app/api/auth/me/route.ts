@@ -28,12 +28,13 @@ export async function GET() {
     return res;
   }
 
-  let hasPasskey = false;
+  let passkeyCount = 0;
   try {
-    hasPasskey = (await countPasskeys(actor.user.id)) > 0;
+    passkeyCount = await countPasskeys(actor.user.id);
   } catch {
     /* ignore */
   }
+  const hasPasskey = passkeyCount > 0;
 
   const res = NextResponse.json({
     authenticated: true,
@@ -44,6 +45,7 @@ export async function GET() {
     permissions: actor.perms,
     isAdmin: can(actor.perms, "admin.access"),
     hasPasskey,
+    passkeyCount,
   });
 
   const stale =
